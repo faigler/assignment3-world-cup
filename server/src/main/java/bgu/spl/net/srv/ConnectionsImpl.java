@@ -11,7 +11,7 @@ public class ConnectionsImpl<T> implements Connections<T> {
     // <channel, <connectionId, subscriptionId>>
     private final ConcurrentHashMap<String, ConcurrentHashMap<Integer, Integer>> channelSubscriptions;
 
-    // <connectionId, <channel, subscriptionId>>    
+    // <connectionId, <channel, subscriptionId>>
     private final ConcurrentHashMap<Integer, ConcurrentHashMap<String, Integer>> clientSubscriptions;
 
     public ConnectionsImpl() {
@@ -106,6 +106,11 @@ public class ConnectionsImpl<T> implements Connections<T> {
                 ex.printStackTrace();
             }
         }
+    }
+
+    public boolean isSubscribed(int connectionId, String channel) {
+        ConcurrentHashMap<String, Integer> subs = clientSubscriptions.get(connectionId);
+        return subs != null && subs.containsKey(channel);
     }
 
 }
