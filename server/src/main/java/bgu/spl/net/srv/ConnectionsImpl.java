@@ -101,9 +101,9 @@ public class ConnectionsImpl<T> implements Connections<T> {
         if (handler != null) {
             try {
                 handler.close();
-            } catch (IOException e) {
+            } catch (IOException ex) {
                 // Closing failed, but connection is already removed from server state
-                // TODO: see if we need to print an error message here
+                ex.printStackTrace();
             }
         }
     }

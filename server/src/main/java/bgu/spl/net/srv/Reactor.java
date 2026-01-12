@@ -2,6 +2,8 @@ package bgu.spl.net.srv;
 
 import bgu.spl.net.api.MessageEncoderDecoder;
 import bgu.spl.net.api.MessagingProtocol;
+import bgu.spl.net.api.StompMessagingProtocol;
+
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.channels.ClosedSelectorException;
@@ -11,12 +13,15 @@ import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.Supplier;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Reactor<T> implements Server<T> {
 
     private final int port;
-    private final Supplier<MessagingProtocol<T>> protocolFactory;
+    private final Supplier<StompMessagingProtocol<T>> protocolFactory;
     private final Supplier<MessageEncoderDecoder<T>> readerFactory;
+    private final ConnectionsImpl<T> connections;
+    private final AtomicInteger connectionIdCounter;
     private final ActorThreadPool pool;
     private Selector selector;
 
@@ -26,13 +31,15 @@ public class Reactor<T> implements Server<T> {
     public Reactor(
             int numThreads,
             int port,
-            Supplier<MessagingProtocol<T>> protocolFactory,
+            Supplier<StompMessagingProtocol<T>> protocolFactory,
             Supplier<MessageEncoderDecoder<T>> readerFactory) {
 
         this.pool = new ActorThreadPool(numThreads);
         this.port = port;
         this.protocolFactory = protocolFactory;
         this.readerFactory = readerFactory;
+        this.connections = new ConnectionsImpl<>();
+        this.connectionIdCounter = new AtomicInteger(0);
     }
 
     @Override
@@ -81,6 +88,7 @@ public class Reactor<T> implements Server<T> {
 
     /*package*/ void updateInterestedOps(SocketChannel chan, int ops) {
         final SelectionKey key = chan.keyFor(selector);
+        if (key == null) return;
         if (Thread.currentThread() == selectorThread) {
             key.interestOps(ops);
         } else {
@@ -94,12 +102,26 @@ public class Reactor<T> implements Server<T> {
 
     private void handleAccept(ServerSocketChannel serverChan, Selector selector) throws IOException {
         SocketChannel clientChan = serverChan.accept();
+        if (clientChan == null) return;
         clientChan.configureBlocking(false);
-        final NonBlockingConnectionHandler<T> handler = new NonBlockingConnectionHandler<>(
+
+        int connectionId = connectionIdCounter.getAndIncrement();
+
+        StompMessagingProtocol<T> protocol = protocolFactory.get();
+
+        protocol.start(connectionId, connections);
+
+        NonBlockingConnectionHandler<T> handler = new NonBlockingConnectionHandler<>(
                 readerFactory.get(),
-                protocolFactory.get(),
+                protocol,
+                connectionId,
+                connections,
                 clientChan,
-                this);
+                this
+        );
+
+        connections.connect(connectionId, handler);
+
         clientChan.register(selector, SelectionKey.OP_READ, handler);
     }
 
