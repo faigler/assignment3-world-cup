@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public abstract class BaseServer<T> implements Server<T> {
 
     private final int port;
-    private final Supplier<StompMessagingProtocol<T>> protocolFactory;
+    private final Supplier<MessagingProtocol<T>> protocolFactory;
     private final Supplier<MessageEncoderDecoder<T>> encdecFactory;
     protected final ConnectionsImpl<T> connections;
     private final AtomicInteger connectionIdCounter;
@@ -21,7 +21,7 @@ public abstract class BaseServer<T> implements Server<T> {
 
     public BaseServer(
             int port,
-            Supplier<StompMessagingProtocol<T>> protocolFactory,
+            Supplier<MessagingProtocol<T>> protocolFactory,
             Supplier<MessageEncoderDecoder<T>> encdecFactory) {
 
         this.port = port;
@@ -44,7 +44,7 @@ public abstract class BaseServer<T> implements Server<T> {
 
                 Socket clientSock = serverSock.accept();
                 int connectionId = connectionIdCounter.getAndIncrement();
-                StompMessagingProtocol<T> protocol = protocolFactory.get();
+                MessagingProtocol<T> protocol = protocolFactory.get();
 
                 BlockingConnectionHandler<T> handler = new BlockingConnectionHandler<>(
                         clientSock,
@@ -56,9 +56,9 @@ public abstract class BaseServer<T> implements Server<T> {
                     clientSock.close(); 
                     continue;
                 }
-
-                protocol.start(connectionId, connections);
-
+                if (protocol instanceof StompMessagingProtocol){
+                 ((StompMessagingProtocol<T>) protocol).start(connectionId, connections);
+                }
                 execute(handler);
             }
         } catch (IOException ex) {

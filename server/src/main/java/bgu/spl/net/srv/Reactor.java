@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class Reactor<T> implements Server<T> {
 
     private final int port;
-    private final Supplier<StompMessagingProtocol<T>> protocolFactory;
+    private final Supplier<MessagingProtocol<T>> protocolFactory;
     private final Supplier<MessageEncoderDecoder<T>> readerFactory;
     private final ConnectionsImpl<T> connections;
     private final AtomicInteger connectionIdCounter;
@@ -31,7 +31,7 @@ public class Reactor<T> implements Server<T> {
     public Reactor(
             int numThreads,
             int port,
-            Supplier<StompMessagingProtocol<T>> protocolFactory,
+            Supplier<MessagingProtocol<T>> protocolFactory,
             Supplier<MessageEncoderDecoder<T>> readerFactory) {
 
         this.pool = new ActorThreadPool(numThreads);
@@ -108,11 +108,13 @@ public class Reactor<T> implements Server<T> {
 
         int connectionId = connectionIdCounter.getAndIncrement();
 
-        StompMessagingProtocol<T> protocol = protocolFactory.get();
+        MessagingProtocol<T> protocol = protocolFactory.get();
 
         // decide if we want todo start in the reactor theead or in the actorthreadpool
         // as a task
-        protocol.start(connectionId, connections);
+        if (protocol instanceof StompMessagingProtocol) {
+            ((StompMessagingProtocol<T>) protocol).start(connectionId, connections);
+        }
         // pool.submit(handler, () -> {
         // protocol.start(connectionId, connections);
         // updateInterestedOps(clientChan, SelectionKey.OP_READ);
