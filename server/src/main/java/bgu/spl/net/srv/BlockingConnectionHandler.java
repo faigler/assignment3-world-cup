@@ -14,8 +14,6 @@ public class BlockingConnectionHandler<T> implements Runnable, ConnectionHandler
     private final StompMessagingProtocol<T> protocol;
     private final MessageEncoderDecoder<T> encdec;
     private final Socket sock;
-    private final int connectionId;
-    private final Connections<T> connections;
     private BufferedInputStream in;
     private BufferedOutputStream out;
     private volatile boolean connected = true;
@@ -23,14 +21,10 @@ public class BlockingConnectionHandler<T> implements Runnable, ConnectionHandler
     public BlockingConnectionHandler(
         Socket sock, 
         MessageEncoderDecoder<T> reader, 
-        StompMessagingProtocol<T> protocol,
-        int connectionId,
-        Connections<T> connections) {
+        StompMessagingProtocol<T> protocol) {
         this.sock = sock;
         this.encdec = reader;
         this.protocol = protocol;
-        this.connectionId = connectionId;
-        this.connections = connections;
     }
 
     @Override
@@ -58,7 +52,6 @@ public class BlockingConnectionHandler<T> implements Runnable, ConnectionHandler
     public void close() throws IOException {
         connected = false;
         sock.close();
-        connections.disconnect(connectionId);
     }
 
     @Override

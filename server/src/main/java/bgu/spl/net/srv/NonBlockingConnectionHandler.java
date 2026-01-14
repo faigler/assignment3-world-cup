@@ -18,8 +18,6 @@ public class NonBlockingConnectionHandler<T> implements ConnectionHandler<T> {
 
     private final StompMessagingProtocol<T> protocol;
     private final MessageEncoderDecoder<T> encdec;
-    private final int connectionId;
-    private final Connections<T> connections;
     private final Queue<ByteBuffer> writeQueue = new ConcurrentLinkedQueue<>();
     private final SocketChannel chan;
     private final Reactor reactor;
@@ -27,15 +25,11 @@ public class NonBlockingConnectionHandler<T> implements ConnectionHandler<T> {
     public NonBlockingConnectionHandler(
             MessageEncoderDecoder<T> reader,
             StompMessagingProtocol<T> protocol,
-            int connectionId,
-            Connections<T> connections,
             SocketChannel chan,
             Reactor reactor) {
         this.chan = chan;
         this.encdec = reader;
         this.protocol = protocol;
-        this.connectionId = connectionId;
-        this.connections = connections;
         this.reactor = reactor;
 
     }
@@ -74,7 +68,6 @@ public class NonBlockingConnectionHandler<T> implements ConnectionHandler<T> {
 
     public void close() {
         try {
-            connections.disconnect(connectionId);
             chan.close();
         } catch (IOException ex) {
             ex.printStackTrace();

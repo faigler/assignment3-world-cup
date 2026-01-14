@@ -44,16 +44,16 @@ public class Reactor<T> implements Server<T> {
 
     @Override
     public void serve() {
-	selectorThread = Thread.currentThread();
+        selectorThread = Thread.currentThread();
         try (Selector selector = Selector.open();
                 ServerSocketChannel serverSock = ServerSocketChannel.open()) {
 
-            this.selector = selector; //just to be able to close
+            this.selector = selector; // just to be able to close
 
             serverSock.bind(new InetSocketAddress(port));
             serverSock.configureBlocking(false);
             serverSock.register(selector, SelectionKey.OP_ACCEPT);
-			System.out.println("Server started");
+            System.out.println("Server started");
 
             while (!Thread.currentThread().isInterrupted()) {
 
@@ -71,14 +71,14 @@ public class Reactor<T> implements Server<T> {
                     }
                 }
 
-                selector.selectedKeys().clear(); //clear the selected keys set so that we can know about new events
+                selector.selectedKeys().clear(); // clear the selected keys set so that we can know about new events
 
             }
 
         } catch (ClosedSelectorException ex) {
-            //do nothing - server was requested to be closed
+            // do nothing - server was requested to be closed
         } catch (IOException ex) {
-            //this is an error
+            // this is an error
             ex.printStackTrace();
         }
 
@@ -86,9 +86,10 @@ public class Reactor<T> implements Server<T> {
         pool.shutdown();
     }
 
-    /*package*/ void updateInterestedOps(SocketChannel chan, int ops) {
+    /* package */ void updateInterestedOps(SocketChannel chan, int ops) {
         final SelectionKey key = chan.keyFor(selector);
-        if (key == null) return;
+        if (key == null)
+            return;
         if (Thread.currentThread() == selectorThread) {
             key.interestOps(ops);
         } else {
@@ -99,27 +100,29 @@ public class Reactor<T> implements Server<T> {
         }
     }
 
-
     private void handleAccept(ServerSocketChannel serverChan, Selector selector) throws IOException {
         SocketChannel clientChan = serverChan.accept();
-        if (clientChan == null) return;
+        if (clientChan == null)
+            return;
         clientChan.configureBlocking(false);
 
         int connectionId = connectionIdCounter.getAndIncrement();
 
         StompMessagingProtocol<T> protocol = protocolFactory.get();
 
+        // decide if we want todo start in the reactor theead or in the actorthreadpool as a task
         protocol.start(connectionId, connections);
+        //pool.submit(handler, () -> {
+            //protocol.start(connectionId, connections);
+            //updateInterestedOps(clientChan, SelectionKey.OP_READ);
+       // });
 
         NonBlockingConnectionHandler<T> handler = new NonBlockingConnectionHandler<>(
                 readerFactory.get(),
                 protocol,
-                connectionId,
-                connections,
                 clientChan,
-                this
-        );
-
+                this);
+                
         connections.connect(connectionId, handler);
 
         clientChan.register(selector, SelectionKey.OP_READ, handler);
@@ -136,7 +139,7 @@ public class Reactor<T> implements Server<T> {
             }
         }
 
-	    if (key.isValid() && key.isWritable()) {
+        if (key.isValid() && key.isWritable()) {
             handler.continueWrite();
         }
     }
