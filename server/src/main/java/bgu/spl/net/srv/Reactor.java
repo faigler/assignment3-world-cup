@@ -110,20 +110,25 @@ public class Reactor<T> implements Server<T> {
 
         StompMessagingProtocol<T> protocol = protocolFactory.get();
 
-        // decide if we want todo start in the reactor theead or in the actorthreadpool as a task
+        // decide if we want todo start in the reactor theead or in the actorthreadpool
+        // as a task
         protocol.start(connectionId, connections);
-        //pool.submit(handler, () -> {
-            //protocol.start(connectionId, connections);
-            //updateInterestedOps(clientChan, SelectionKey.OP_READ);
-       // });
+        // pool.submit(handler, () -> {
+        // protocol.start(connectionId, connections);
+        // updateInterestedOps(clientChan, SelectionKey.OP_READ);
+        // });
 
         NonBlockingConnectionHandler<T> handler = new NonBlockingConnectionHandler<>(
                 readerFactory.get(),
                 protocol,
                 clientChan,
                 this);
-                
-        connections.connect(connectionId, handler);
+
+        boolean ok = connections.connect(connectionId, handler);
+        if (!ok) {
+            clientChan.close();
+            return;
+        }
 
         clientChan.register(selector, SelectionKey.OP_READ, handler);
     }

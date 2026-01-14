@@ -6,13 +6,17 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import bgu.spl.net.api.StompMessagingProtocol;
 import bgu.spl.net.srv.Connections;
-
+import bgu.spl.net.impl.data.Database;
+import bgu.spl.net.impl.data.LoginStatus;
 
 public class StompMessagingProtocolImpl implements StompMessagingProtocol<String> {
     private int connectionId;
     private boolean shouldTerminate = false;
     private Connections<String> connections;
     private static final AtomicInteger messageIdCounter = new AtomicInteger(0);
+    private boolean connected = false;
+    private final Database database = Database.getInstance();
+    private String username = null;
 
     @Override
     public void start(int connectionId, Connections<String> connections) {
@@ -88,11 +92,21 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
 
     private void handleConnect(Map<String, String> headers, String originalFrame) {
 
-        if (!headers.containsKey("accept-version") ||
-                !headers.containsKey("host") ||
-                !headers.containsKey("login") ||
-                !headers.containsKey("passcode")) {
+        if (connected) {
+            sendError(
+                    "Already connected",
+                    originalFrame,
+                    "Client has already sent CONNECT frame.",
+                    headers);
+            return;
+        }
 
+        String acceptVersion = headers.get("accept-version");
+        String host = headers.get("host");
+        String login = headers.get("login");
+        String passcode = headers.get("passcode");
+
+        if (acceptVersion == null || host == null || login == null || passcode == null) {
             sendError(
                     "malformed frame received",
                     originalFrame,
@@ -101,7 +115,51 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
             return;
         }
 
-        // success
+        if (!acceptVersion.contains("1.2")) {
+            sendError(
+                    "version not supported",
+                    originalFrame,
+                    "Server supports STOMP version 1.2 only.",
+                    headers);
+            return;
+        }
+
+        LoginStatus status = database.login(connectionId, login, passcode);
+
+        switch (status) {
+
+            case CLIENT_ALREADY_CONNECTED:
+                sendError(
+                        "Client already connected",
+                        originalFrame,
+                        "This connection id is already logged in.",
+                        headers);
+                return;
+
+            case ALREADY_LOGGED_IN:
+                sendError(
+                        "User already logged in",
+                        originalFrame,
+                        "User " + login + " is already logged in.",
+                        headers);
+                return;
+
+            case WRONG_PASSWORD:
+                sendError(
+                        "Wrong password",
+                        originalFrame,
+                        "Incorrect password for user " + login,
+                        headers);
+                return;
+
+            case ADDED_NEW_USER:
+            case LOGGED_IN_SUCCESSFULLY:
+                // success
+                connected = true;
+                username = login;
+                break;
+        }
+
         String response = "CONNECTED\n" +
                 "version:1.2\n\n" +
                 "\0";
@@ -112,6 +170,15 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
     private void handleSend(Map<String, String> headers,
             String body,
             String originalFrame) {
+
+        if (!connected) {
+            sendError(
+                    "Not connected",
+                    originalFrame,
+                    "Command sent before CONNECT.",
+                    headers);
+            return;
+        }
 
         String destination = headers.get("destination");
 
@@ -141,10 +208,11 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
             int subscriberId = entry.getKey();
             int subscriptionId = entry.getValue();
 
+            int messageId = messageIdCounter.incrementAndGet();
             String messageFrame = "MESSAGE\n" +
                     "subscription:" + subscriptionId + "\n" +
                     "destination:" + destination + "\n" +
-                    "message-id:" + messageIdCounter.incrementAndGet() + "\n\n" +
+                    "message-id:" + messageId + "\n\n" +
                     body +
                     "\0";
 
@@ -155,6 +223,15 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
     }
 
     private void handleSubscribe(Map<String, String> headers, String originalFrame) {
+
+        if (!connected) {
+            sendError(
+                    "Not connected",
+                    originalFrame,
+                    "Command sent before CONNECT.",
+                    headers);
+            return;
+        }
 
         String destination = headers.get("destination");
         String idStr = headers.get("id");
@@ -180,11 +257,30 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
             return;
         }
 
-        connections.subscribe(connectionId, destination, subId);
+        boolean ok = connections.subscribe(connectionId, destination, subId);
+
+        if (!ok) {
+            sendError(
+                    "subscription failed",
+                    originalFrame,
+                    "Client is already subscribed to destination " + destination,
+                    headers);
+            return;
+        }
+
         handleReceipt(headers);
     }
 
     private void handleUnsubscribe(Map<String, String> headers, String originalFrame) {
+
+        if (!connected) {
+            sendError(
+                    "Not connected",
+                    originalFrame,
+                    "Command sent before CONNECT.",
+                    headers);
+            return;
+        }
 
         String idStr = headers.get("id");
 
@@ -209,12 +305,44 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
             return;
         }
 
-        connections.unsubscribe(connectionId, subId);
+        boolean ok = connections.unsubscribe(connectionId, subId);
+
+        if (!ok) {
+            sendError(
+                    "subscription not found",
+                    originalFrame,
+                    "No subscription with id " + subId + " exists.",
+                    headers);
+            return;
+        }
+
         handleReceipt(headers);
     }
 
     private void handleDisconnect(Map<String, String> headers) {
+
+        if (headers == null) {
+            sendError(
+                    "malformed frame received",
+                    null,
+                    "DISCONNECT frame must contain headers section (even if empty).",
+                    headers);
+            return;
+        }
+
+        if (!connected) {
+            sendError(
+                    "Not connected",
+                    null,
+                    "DISCONNECT frame received before CONNECT.",
+                    headers);
+            return;
+        }
+
         handleReceipt(headers);
+
+        database.logout(connectionId);
+
         shouldTerminate = true;
         connections.disconnect(connectionId);
     }

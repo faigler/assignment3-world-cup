@@ -5,7 +5,7 @@ import java.util.Map;
 
 public interface Connections<T> {
 
-    void connect(int connectionId, ConnectionHandler<T> handler);
+    boolean connect(int connectionId, ConnectionHandler<T> handler);
     
     boolean send(int connectionId, T msg);
 
@@ -13,7 +13,7 @@ public interface Connections<T> {
 
     boolean subscribe(int connectionId, String channel, int subscriptionId);
 
-    void unsubscribe(int connectionId, int subscriptionId);
+    boolean unsubscribe(int connectionId, int subscriptionId);
 
     void disconnect(int connectionId);
 

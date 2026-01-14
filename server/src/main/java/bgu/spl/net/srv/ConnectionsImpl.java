@@ -23,18 +23,19 @@ public class ConnectionsImpl<T> implements Connections<T> {
     }
 
     @Override
-    public void connect (int connectionId, ConnectionHandler<T> handler) {
+    public boolean connect(int connectionId, ConnectionHandler<T> handler) {
         if (handler == null) {
-            throw new IllegalArgumentException("ConnectionHandler cannot be null");
+            return false;
         }
 
-        ConnectionHandler<T> existing = handlers.put(connectionId, handler);
+        ConnectionHandler<T> existing = handlers.putIfAbsent(connectionId, handler);
+
         if (existing != null) {
-            throw new IllegalStateException("Connection ID already exists: " + connectionId);
+            return false; // already connected
         }
-        
+
         clientSubscriptions.put(connectionId, new ConcurrentHashMap<>());
-        
+        return true;
     }
 
     @Override
@@ -88,12 +89,12 @@ public class ConnectionsImpl<T> implements Connections<T> {
     }
 
     @Override
-    public void unsubscribe(int connectionId, int subscriptionId) {
+    public boolean unsubscribe(int connectionId, int subscriptionId) {
 
         // Get all subscriptions of this client: <channel , subscriptionId>
         ConcurrentHashMap<String, Integer> subs = clientSubscriptions.get(connectionId);
         if (subs == null)
-            return;
+            return false;
 
         String channelToRemove = null;
 
@@ -105,16 +106,19 @@ public class ConnectionsImpl<T> implements Connections<T> {
             }
         }
 
-        if (channelToRemove != null) {
-            // Remove from client's subscription list
-            subs.remove(channelToRemove);
+        if (channelToRemove == null)
+            return false;
 
-            ConcurrentHashMap<Integer, Integer> channelMap = channelSubscriptions.get(channelToRemove);
-            if (channelMap != null) {
-                // Remove this client from the channel subscribers
-                channelMap.remove(connectionId);
-            }
+        // Remove from client's subscription list
+        subs.remove(channelToRemove);
+
+        ConcurrentHashMap<Integer, Integer> channelMap = channelSubscriptions.get(channelToRemove);
+        if (channelMap != null) {
+            // Remove this client from the channel subscribers
+            channelMap.remove(connectionId);
         }
+
+        return true;
     }
 
     @Override
