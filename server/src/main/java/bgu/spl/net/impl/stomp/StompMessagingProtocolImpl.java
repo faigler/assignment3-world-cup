@@ -2,21 +2,22 @@ package bgu.spl.net.impl.stomp;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
-import bgu.spl.net.api.MessagingProtocol;
 import bgu.spl.net.api.StompMessagingProtocol;
 import bgu.spl.net.srv.Connections;
-import bgu.spl.net.srv.ConnectionsImpl;
+
 
 public class StompMessagingProtocolImpl implements StompMessagingProtocol<String> {
     private int connectionId;
     private boolean shouldTerminate = false;
-    private ConnectionsImpl<String> connections;
+    private Connections<String> connections;
+    private static final AtomicInteger messageIdCounter = new AtomicInteger(0);
 
     @Override
     public void start(int connectionId, Connections<String> connections) {
         this.connectionId = connectionId;
-        this.connections = (ConnectionsImpl<String>) connections;
+        this.connections = connections;
     }
 
     @Override
@@ -45,7 +46,10 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
 
         // Parse body (if exists)
         while (i < lines.length) {
-            body += lines[i] + "\n";
+            body += lines[i];
+            if (i < lines.length - 1) {
+                body += "\n";
+            }
             i++;
         }
 
@@ -71,7 +75,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
                 break;
 
             default:
-                sendError("Unknown command",originalFrame, "", headers);
+                sendError("Unknown command", originalFrame, "", headers);
         }
     }
 
@@ -131,7 +135,21 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
         }
 
         // broadcast message
-        connections.send(destination, body);
+        Map<Integer, Integer> subscribers = connections.getSubscribers(destination);
+
+        for (Map.Entry<Integer, Integer> entry : subscribers.entrySet()) {
+            int subscriberId = entry.getKey();
+            int subscriptionId = entry.getValue();
+
+            String messageFrame = "MESSAGE\n" +
+                    "subscription:" + subscriptionId + "\n" +
+                    "destination:" + destination + "\n" +
+                    "message-id:" + messageIdCounter.incrementAndGet() + "\n\n" +
+                    body +
+                    "\0";
+
+            connections.send(subscriberId, messageFrame);
+        }
 
         handleReceipt(headers);
     }
@@ -213,7 +231,6 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
             connections.send(connectionId, response);
         }
     }
-
 
     private void sendError(String shortMessage,
             String originalFrame,

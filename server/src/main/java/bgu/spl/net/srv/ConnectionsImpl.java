@@ -1,6 +1,8 @@
 package bgu.spl.net.srv;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class ConnectionsImpl<T> implements Connections<T> {
@@ -20,9 +22,19 @@ public class ConnectionsImpl<T> implements Connections<T> {
         clientSubscriptions = new ConcurrentHashMap<>();
     }
 
-    public void connect(int connectionId, ConnectionHandler<T> handler) {
-        handlers.put(connectionId, handler);
+    @Override
+    public void connect (int connectionId, ConnectionHandler<T> handler) {
+        if (handler == null) {
+            throw new IllegalArgumentException("ConnectionHandler cannot be null");
+        }
+
+        ConnectionHandler<T> existing = handlers.put(connectionId, handler);
+        if (existing != null) {
+            throw new IllegalStateException("Connection ID already exists: " + connectionId);
+        }
+        
         clientSubscriptions.put(connectionId, new ConcurrentHashMap<>());
+        
     }
 
     @Override
@@ -37,20 +49,45 @@ public class ConnectionsImpl<T> implements Connections<T> {
 
     @Override
     public void send(String channel, T msg) {
-        ConcurrentHashMap<Integer, Integer> subscribers = channelSubscriptions.get(channel);
-        if (subscribers == null) {
-            return;
-        }
-        for (Integer connectionId : subscribers.keySet()) {
-            send(connectionId, msg);
-        }
+        // Not used by the STOMP protocol implementation.
+        // STOMP requires sending a different MESSAGE frame per subscriber (with a
+        // different subscription-id).
+
+        // ConcurrentHashMap<Integer, Integer> subscribers =
+        // channelSubscriptions.get(channel);
+        // if (subscribers == null) {
+        // return;
+        // }
+        // for (Integer connectionId : subscribers.keySet()) {
+        // send(connectionId, msg);
+        // }
     }
 
-    public void subscribe(int connectionId, String channel, int subscriptionId) {
-        channelSubscriptions.computeIfAbsent(channel, k -> new ConcurrentHashMap<>()).put(connectionId, subscriptionId);
-        clientSubscriptions.computeIfAbsent(connectionId, k -> new ConcurrentHashMap<>()).put(channel, subscriptionId);
+    @Override
+    public boolean subscribe(int connectionId, String channel, int subscriptionId) {
+        if (isSubscribed(connectionId, channel)) {
+            return false; // already subscribed
+        }
+
+        // update channelSubscriptions
+        ConcurrentHashMap<Integer, Integer> channelMap = channelSubscriptions.get(channel);
+        if (channelMap == null) {
+            channelMap = new ConcurrentHashMap<>();
+            channelSubscriptions.put(channel, channelMap);
+        }
+        channelMap.put(connectionId, subscriptionId);
+
+        // update clientSubscriptions
+        ConcurrentHashMap<String, Integer> clientMap = clientSubscriptions.get(connectionId);
+        if (clientMap == null) {
+            return false;
+        }
+        clientMap.put(channel, subscriptionId);
+
+        return true;
     }
 
+    @Override
     public void unsubscribe(int connectionId, int subscriptionId) {
 
         // Get all subscriptions of this client: <channel , subscriptionId>
@@ -106,6 +143,16 @@ public class ConnectionsImpl<T> implements Connections<T> {
                 ex.printStackTrace();
             }
         }
+    }
+
+    @Override
+    public Map<Integer, Integer> getSubscribers(String channel) {
+        ConcurrentHashMap<Integer, Integer> subs = channelSubscriptions.get(channel);
+        if (subs == null) {
+            // returns empty map
+            return new HashMap<Integer, Integer>();
+        }
+        return new HashMap<>(subs); // snapshot
     }
 
     public boolean isSubscribed(int connectionId, String channel) {
