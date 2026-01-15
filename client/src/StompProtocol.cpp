@@ -28,23 +28,70 @@ bool StompProtocol::processServerFrame(const string &frame)
 
     if (frame.find("RECEIPT") == 0)
     {
+        // Find the receipt-id header position
         size_t pos = frame.find("receipt-id:");
+
+        // Extract the receipt id number (after "receipt-id:")
         int id = stoi(frame.substr(pos + 11));
+
+        // Print the stored action related to this receipt
         cout << receiptActions[id] << endl;
+
+        // Continue running client
         return true;
     }
 
     if (frame.find("ERROR") == 0)
     {
-        cout << "Server ERROR:\n"
-             << frame << endl;
+        // Find "message:" header
+        size_t msgPos = frame.find("message:");
+        string shortMsg = "";
+
+        if (msgPos != string::npos)
+        {
+            // Extract short error message line
+            size_t msgEnd = frame.find('\n', msgPos);
+            shortMsg = frame.substr(msgPos + 8, msgEnd - (msgPos + 8));
+        }
+
+        // Find start of body (after empty line)
+        size_t bodyPos = frame.find("\n\n");
+        string body = "";
+
+        if (bodyPos != string::npos)
+        {
+            // Extract full error body
+            body = frame.substr(bodyPos + 2);
+        }
+
+        // Print error information
+        cout << "ERROR message: " << shortMsg << endl;
+        cout << "ERROR description:\n"
+             << body << endl;
+
+        // Protocol rule: ERROR closes connection
         loggedIn = false;
         return false;
     }
 
     if (frame.find("MESSAGE") == 0)
     {
-        cout << frame << endl;
+        // Extract destination
+        size_t destPos = frame.find("destination:");
+        size_t destEnd = frame.find('\n', destPos);
+        string gameName = frame.substr(destPos + 12, destEnd - (destPos + 12));
+
+        // Extract body
+        size_t bodyPos = frame.find("\n\n");
+        string body = frame.substr(bodyPos + 2);
+
+        Event event(body);
+        string user = getUserName(body);
+
+        gameEvents[gameName][user].push_back(event);
+
+        cout << "Received message from " << gameName << ":\n"
+             << body << endl;
         return true;
     }
 
@@ -85,9 +132,15 @@ string StompProtocol::processUserCommand(const string &line)
         return handleExit(channel);
     }
 
-    if (cmd == "logout")
+    if (cmd == "report")
     {
-        return handleLogout();
+        string filePath;
+        if (!(ss >> filePath))
+        {
+            cout << "Usage: report <file>" << endl;
+            return "";
+        }
+        return handleReport(filePath);
     }
 
     if (cmd == "summary")
@@ -102,26 +155,22 @@ string StompProtocol::processUserCommand(const string &line)
         return "";
     }
 
-    if (cmd == "report")
+    if (cmd == "logout")
     {
-        string filePath;
-        if (!(ss >> filePath))
-        {
-            cout << "Usage: report <file>" << endl;
-            return "";
-        }
-        return handleReport(filePath);
+        return handleLogout();
     }
 
     cout << "Illegal command" << endl;
     return "";
 }
 
+/* ================= Handlers ================= */
+
 string StompProtocol::handleJoin(const string &channel)
 {
-    if (subscriptions.count(channel))
+    if (subscriptions.count(channel) > 0)
     {
-        cout << "Already subscribed\n";
+        cout << "Already subscribed to " << channel << "\n";
         return "";
     }
 
@@ -142,9 +191,9 @@ string StompProtocol::handleJoin(const string &channel)
 
 string StompProtocol::handleExit(const string &channel)
 {
-    if (!subscriptions.count(channel))
+    if (subscriptions.count(channel) == 0)
     {
-        cout << "Not subscribed\n";
+        cout << "Not subscribed to " << channel << "\n";
         return "";
     }
 
@@ -159,26 +208,6 @@ string StompProtocol::handleExit(const string &channel)
            to_string(subId) + "\n"
                               "receipt:" +
            to_string(receiptId) + "\n\n\0";
-}
-
-string StompProtocol::handleLogout()
-{
-    int receiptId = ++receiptIdCounter;
-    receiptActions[receiptId] = "Disconnecting";
-
-    return "DISCONNECT\n"
-           "receipt:" +
-           to_string(receiptId) + "\n\n\0";
-}
-
-void StompProtocol::handleSummary(const string &game,
-                                  const string &user,
-                                  const string &file)
-{
-    cout << "Summary command received" << endl;
-    cout << "Game: " << game << endl;
-    cout << "User: " << user << endl;
-    cout << "Output file: " << file << endl;
 }
 
 string StompProtocol::handleReport(const string &filePath)
@@ -197,7 +226,6 @@ string StompProtocol::handleReport(const string &filePath)
 
     string gameName = data.team_a_name + "_" + data.team_b_name;
 
-    // חייב להיות subscribed
     if (activeSubscriptions.count(gameName) == 0)
     {
         cout << "Error: not subscribed to " << gameName << endl;
@@ -248,4 +276,96 @@ string StompProtocol::handleReport(const string &filePath)
     return frames;
 }
 
+void StompProtocol::handleSummary(string gameName, string userName, string filePath)
+{
+    // Check if we have events
+    if (gameEvents.count(gameName) == 0 ||
+        gameEvents[gameName].count(userName) == 0)
+    {
+        cout << "No events found for user " << userName
+             << " in game " << gameName << endl;
+        return;
+    }
 
+    // Opens the output file:
+    // - If the file does not exist, it will be created
+    // - If the file already exists, its content will be overwritten
+    ofstream outFile(filePath);
+    if (!outFile)
+    {
+        cout << "Error creating file: " << filePath << endl;
+        return;
+    }
+
+    // Copy events and sort by time
+    vector<Event> events = gameEvents[gameName][userName];
+    sort(events.begin(), events.end(),
+         [](const Event &a, const Event &b)
+         {
+             return a.get_time() < b.get_time();
+         });
+
+    string teamA = events[0].get_team_a_name();
+    string teamB = events[0].get_team_b_name();
+
+    map<string, string> generalStats;
+    map<string, string> teamAStats;
+    map<string, string> teamBStats;
+
+    // Collect statistics (last value wins)
+    for (const Event &event : events)
+    {
+        for (const auto &p : event.get_game_updates())
+            generalStats[p.first] = p.second;
+
+        for (const auto &p : event.get_team_a_updates())
+            teamAStats[p.first] = p.second;
+
+        for (const auto &p : event.get_team_b_updates())
+            teamBStats[p.first] = p.second;
+    }
+
+    // Header
+    outFile << teamA << " vs " << teamB << "\n";
+    outFile << "Game stats:\n";
+
+    // General stats
+    outFile << "General stats:\n";
+    for (const auto &p : generalStats)
+        outFile << p.first << ": " << p.second << "\n";
+    outFile << "\n";
+
+    // Team A stats
+    outFile << teamA << " stats:\n";
+    for (const auto &p : teamAStats)
+        outFile << p.first << ": " << p.second << "\n";
+    outFile << "\n";
+
+    // Team B stats
+    outFile << teamB << " stats:\n";
+    for (const auto &p : teamBStats)
+        outFile << p.first << ": " << p.second << "\n";
+    outFile << "\n";
+
+    // Event reports
+    outFile << "Game event reports:\n";
+    for (const Event &event : events)
+    {
+        outFile << event.get_time()
+                << " - " << event.get_name() << ":\n\n";
+        outFile << event.get_discription() << "\n\n";
+    }
+
+    outFile.close();
+    cout << "Summary file created at " << filePath << endl;
+}
+
+string StompProtocol::handleLogout()
+{
+    int receiptId = ++receiptIdCounter;
+    receiptActions[receiptId] = "Disconnecting";
+
+    return "DISCONNECT\n"
+           "receipt:" +
+           to_string(receiptId) + "\n\n\0";
+}

@@ -33,11 +33,11 @@ private:
     // Client command handlers
     string handleJoin(const string &channel);
     string handleExit(const string &channel);
-    string handleLogout();
     string handleReport(const string &filePath);
     void handleSummary(const string &game,
                        const string &user,
                        const string &file);
+    string handleLogout();
 
     // User state
     string username;
