@@ -1,10 +1,58 @@
 #pragma once
 
-#include "../include/ConnectionHandler.h"
+#include "../include/ConnectionHandler.h"ִִ
 
-// TODO: implement the STOMP protocol
+#ifndef STOMPPROTOCOL_H_
+#define STOMPPROTOCOL_H_
+
+#include <string>
+#include <map>
+#include <vector>
+#include <unordered_map>
+
+#include "event.h"
+
+using std::map;
+using std::string;
+using std::vector;
+
 class StompProtocol
 {
-private:
 public:
+    StompProtocol();
+
+    // State setters
+    void setUsername(const string &user);
+    void setLoggedIn(bool value);
+
+    // Processing
+    bool processServerFrame(const string &frame);
+    string processUserCommand(const string &line);
+
+private:
+    // Client command handlers
+    string handleJoin(const string &channel);
+    string handleExit(const string &channel);
+    string handleLogout();
+    string handleReport(const string &filePath);
+    void handleSummary(const string &game,
+                       const string &user,
+                       const string &file);
+
+    // User state
+    string username;
+    bool loggedIn;
+
+    // Counters
+    int subIdCounter;
+    int receiptIdCounter;
+
+    // Subscriptions and receipts
+    map<string, int> subscriptions;  // channel -> subscription id
+    map<int, string> receiptActions; // receipt id -> action message
+
+    // Stored game events (for summary)
+    map<string, map<string, vector<Event>>> gameEvents;
 };
+
+#endif /* STOMPPROTOCOL_H_ */
