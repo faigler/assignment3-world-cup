@@ -36,5 +36,4 @@ private:
     std::thread listenerThread;
 
     std::atomic<bool> shouldStop;   // stop the whole client
-    std::atomic<bool> connected;    // true after successful TCP connect (not necessarily CONNECTED yet)
 };

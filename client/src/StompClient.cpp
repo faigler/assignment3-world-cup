@@ -6,6 +6,9 @@
 
 using namespace std;
 
+
+ // Splits an input line by spaces into tokens (vector<string>).
+ // Used to parse user commands from stdin.
 static vector<string> splitBySpace(const string& line) {
     stringstream ss(line);
     vector<string> tokens;
@@ -17,21 +20,25 @@ static vector<string> splitBySpace(const string& line) {
 StompClient::StompClient()
     : connectionHandler(nullptr),
       protocol(nullptr),
-      shouldStop(false),
-      connected(false) {}
+      shouldStop(false) {}
 
 StompClient::~StompClient() {
     cleanup();
 }
 
+
+// Main client loop:
+ //- Reads user input
+ //- Handles login separately
+ //- Sends other commands to the server via the protocol
 void StompClient::run() {
     while (!shouldStop.load()) {
         string line;
-        if (!getline(cin, line)) break; // EOF
+        if (!getline(cin, line)) break; // returns false only if the client actively closes stdin (Ctrl-D)
 
         if (line.empty()) continue;
 
-        auto tokens = splitBySpace(line);
+        auto tokens = splitBySpace(line); // the compiler will decide the type based on the return type of the function
         if (tokens.empty()) continue;
 
         const string& cmd = tokens[0];
@@ -67,6 +74,12 @@ void StompClient::run() {
     cleanup();
 }
 
+
+// Handles the login command:
+// - Parses host, port, username, password
+// - Opens TCP connection
+// - Sends CONNECT frame
+// - Starts listener thread
 void StompClient::handleLoginCommand(const std::string& line) {
     // Already connected?
     if (connectionHandler != nullptr) {
@@ -74,8 +87,7 @@ void StompClient::handleLoginCommand(const std::string& line) {
         return;
     }
 
-    auto args = splitBySpace(line);
-    // expected: login host:port username password
+    auto args = splitBySpace(line); // the compiler will decide the type based on the return type of the function
     if (args.size() < 4) {
         cout << "Usage: login <host:port> <username> <password>" << endl;
         return;
@@ -102,15 +114,13 @@ void StompClient::handleLoginCommand(const std::string& line) {
         connectionHandler = nullptr;
         return;
     }
-    connected = true;
 
     // Create protocol
     protocol = new StompProtocol();
     protocol->setUsername(username);
     protocol->setLoggedIn(false);
 
-    // Build CONNECT frame (no Frame class)
-    // Important: empty line before body (no body here)
+    // Build CONNECT frame 
     string connectFrame =
         "CONNECT\n"
         "accept-version:1.2\n"
@@ -125,13 +135,11 @@ void StompClient::handleLoginCommand(const std::string& line) {
         delete connectionHandler;
         protocol = nullptr;
         connectionHandler = nullptr;
-        connected = false;
         return;
     }
 
-    // Start listener thread
     shouldStop = false;
-    listenerThread = thread(&StompClient::listenToServer, this);
+    listenerThread = thread(&StompClient::listenToServer, this); // new thread runs listenToServer() on this object
 }
 
 void StompClient::listenToServer() {
@@ -167,7 +175,7 @@ void StompClient::cleanup() {
         connectionHandler->close();
     }
 
-    // Join thread if exists
+    // Join thread if exists, the main thread (listening to stdin) need to wait for the listenerThread to end
     if (listenerThread.joinable()) {
         listenerThread.join();
     }
@@ -177,23 +185,20 @@ void StompClient::cleanup() {
         delete protocol;
         protocol = nullptr;
     }
-
     if (connectionHandler != nullptr) {
         delete connectionHandler;
         connectionHandler = nullptr;
     }
-
-    connected = false;
 }
 
-/* =========================
-   main() - stays in client
-   ========================= */
+
+// Program entry point.
+// Creates a StompClient instance and starts it.
 int main(int argc, char* argv[]) {
     (void)argc;
     (void)argv;
 
-    StompClient client;
+    StompClient client; // STACK object
     client.run();
     return 0;
 }

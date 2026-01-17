@@ -90,6 +90,7 @@ bool StompProtocol::processServerFrame(const string &frame)
 
         // Protocol rule: ERROR closes connection
         loggedIn = false;
+        shouldTerminate = true;
         return false;
     }
 
@@ -191,18 +192,6 @@ string StompProtocol::processUserCommand(const string &line)
 
     cout << "Illegal command" << endl;
     return "";
-}
-
-bool StompProtocol::shouldCloseConnection() const
-{
-    return shouldTerminate;
-}
-
-void StompProtocol::markConnectionClosed()
-{
-    shouldTerminate = false;
-    pendingLogoutReceiptId = -1;
-    subscriptions.clear();
 }
 
 /* ================= Handlers ================= */
@@ -421,5 +410,5 @@ string StompProtocol::handleLogout()
     return "DISCONNECT\n"
            "receipt:" +
            to_string(receiptId) +
-           "\n\n\0";
+           "\n\n";
 }

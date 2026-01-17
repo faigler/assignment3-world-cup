@@ -28,15 +28,12 @@ public:
     // Processing
     bool processServerFrame(const string &frame);
     string processUserCommand(const string &line);
-    // Used by the client main after receiving RECEIPT of logout
-    bool shouldCloseConnection() const;
-    void markConnectionClosed();
 
 private:
     // Client command handlers
     string handleJoin(const string &channel);
     string handleExit(const string &channel);
-    string handleReport(const string &filePath);
+    vector<string> StompProtocol::handleReport(const string &filePath);
     void handleSummary(const string &game,
                        const string &user,
                        const string &file);
