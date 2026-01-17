@@ -12,17 +12,21 @@ public:
     StompClient();
     ~StompClient();
 
-    // main loop of the client (reads user input)
+    // Runs the client main loop (reads user input and sends frames)
     void run();
 
 private:
-    // Listener thread function: reads frames from server and passes them to protocol
-    void listenToServer();
-
-    // Handle "login" command separately (creates ConnectionHandler, connects, sends CONNECT)
+    // Handles the "login" keyboard command:
+    // - opens socket
+    // - sends CONNECT frame
+    // - starts listener thread
     void handleLoginCommand(const std::string& line);
 
-    // Cleanup: stop threads, close socket, delete objects
+    // Listener thread function:
+    // reads frames from server and delegates parsing to protocol
+    void listenToServer();
+
+    // Stops everything safely: close socket, join thread, delete objects
     void cleanup();
 
 private:
@@ -31,7 +35,6 @@ private:
 
     std::thread listenerThread;
 
-    std::atomic<bool> loggedIn;        // true after CONNECTED, false after logout/error
-    std::atomic<bool> shouldStop;      // stop the whole client
-    std::atomic<bool> listenerRunning; // to avoid join issues
+    std::atomic<bool> shouldStop;   // stop the whole client
+    std::atomic<bool> connected;    // true after successful TCP connect (not necessarily CONNECTED yet)
 };

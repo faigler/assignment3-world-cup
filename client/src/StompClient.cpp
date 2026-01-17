@@ -6,218 +6,194 @@
 
 using namespace std;
 
-static vector<string> splitBySpace(const string &line)
-{
-	stringstream ss(line);
-	vector<string> tokens;
-	string t;
-	while (ss >> t)
-		tokens.push_back(t);
-	return tokens;
+static vector<string> splitBySpace(const string& line) {
+    stringstream ss(line);
+    vector<string> tokens;
+    string t;
+    while (ss >> t) tokens.push_back(t);
+    return tokens;
 }
 
 StompClient::StompClient()
-	: connectionHandler(nullptr),
-	  protocol(nullptr),
-	  loggedIn(false),
-	  shouldStop(false),
-	  listenerRunning(false) {}
+    : connectionHandler(nullptr),
+      protocol(nullptr),
+      shouldStop(false),
+      connected(false) {}
 
-StompClient::~StompClient()
-{
-	cleanup();
+StompClient::~StompClient() {
+    cleanup();
 }
 
-void StompClient::run()
-{
-	while (!shouldStop.load())
-	{
-		string line;
-		if (!getline(cin, line))
-			break; // EOF
+void StompClient::run() {
+    while (!shouldStop.load()) {
+        string line;
+        if (!getline(cin, line)) break; // EOF
 
-		if (line.empty())
-			continue;
+        if (line.empty()) continue;
 
-		auto tokens = splitBySpace(line);
-		if (tokens.empty())
-			continue;
+        auto tokens = splitBySpace(line);
+        if (tokens.empty()) continue;
 
-		string cmd = tokens[0];
+        const string& cmd = tokens[0];
 
-		if (cmd == "login")
-		{
-			handleLoginCommand(line);
-			continue;
-		}
+        if (cmd == "login") {
+            handleLoginCommand(line);
+            continue;
+        }
 
-		// Any command except login requires being logged in (or at least connected)
-		if (connectionHandler == nullptr || protocol == nullptr)
-		{
-			cout << "Please login first" << endl;
-			continue;
-		}
+        // Every other command requires login/connect first
+        if (connectionHandler == nullptr || protocol == nullptr) {
+            cout << "Please login first" << endl;
+            continue;
+        }
 
-		// Build the frame text via protocol
-		string outFrame = protocol->processUserCommand(line);
+        // Build STOMP frame via protocol
+        string outFrame = protocol->processUserCommand(line);
 
-		if (outFrame.empty())
-		{
-			// protocol already printed error or command was "summary"
-			continue;
-		}
+        // Some commands (like summary) return empty string on purpose
+        if (outFrame.empty()) continue;
 
-		// Send to server (delimiter '\0')
-		if (!connectionHandler->sendFrameAscii(outFrame, '\0'))
-		{
-			cout << "Disconnected. Exiting..." << endl;
-			shouldStop = true;
-			loggedIn = false;
-			break;
-		}
+        // Send to server with '\0' delimiter
+        if (!connectionHandler->sendFrameAscii(outFrame, '\0')) {
+            cout << "Disconnected. Exiting..." << endl;
+            shouldStop = true;
+            break;
+        }
 
-		// If this was logout, we do NOT close immediately.
-		// We wait for RECEIPT in listener thread, then it will stop and we cleanup.
-	}
+        // Note: logout is handled by waiting for RECEIPT in listenToServer(),
+        // so we don't close immediately here.
+    }
 
-	cleanup();
+    cleanup();
 }
 
-void StompClient::handleLoginCommand(const string &line)
-{
-	// If already connected, reject
-	if (connectionHandler != nullptr)
-	{
-		cout << "User is already logged in" << endl;
-		return;
-	}
+void StompClient::handleLoginCommand(const std::string& line) {
+    // Already connected?
+    if (connectionHandler != nullptr) {
+        cout << "User is already logged in" << endl;
+        return;
+    }
 
-	auto args = splitBySpace(line);
-	// expected: login host:port username password
-	if (args.size() < 4)
-	{
-		cout << "Usage: login <host:port> <username> <password>" << endl;
-		return;
-	}
+    auto args = splitBySpace(line);
+    // expected: login host:port username password
+    if (args.size() < 4) {
+        cout << "Usage: login <host:port> <username> <password>" << endl;
+        return;
+    }
 
-	string hostPort = args[1];
-	string user = args[2];
-	string pass = args[3];
+    string hostPort = args[1];
+    string username = args[2];
+    string password = args[3];
 
-	size_t colon = hostPort.find(':');
-	if (colon == string::npos)
-	{
-		cout << "Invalid host:port format" << endl;
-		return;
-	}
+    size_t colon = hostPort.find(':');
+    if (colon == string::npos) {
+        cout << "Invalid host:port format" << endl;
+        return;
+    }
 
-	string host = hostPort.substr(0, colon);
-	short port = static_cast<short>(stoi(hostPort.substr(colon + 1)));
+    string host = hostPort.substr(0, colon);
+    short port = static_cast<short>(stoi(hostPort.substr(colon + 1)));
 
-	connectionHandler = new ConnectionHandler(host, port);
-	if (!connectionHandler->connect())
-	{
-		cout << "Cannot connect to " << host << ":" << port << endl;
-		delete connectionHandler;
-		connectionHandler = nullptr;
-		return;
-	}
+    // Create handler + TCP connect
+    connectionHandler = new ConnectionHandler(host, port);
+    if (!connectionHandler->connect()) {
+        cout << "Cannot connect to " << host << ":" << port << endl;
+        delete connectionHandler;
+        connectionHandler = nullptr;
+        return;
+    }
+    connected = true;
 
-	protocol = new StompProtocol();
-	protocol->setUsername(user);
-	protocol->setLoggedIn(false);
+    // Create protocol
+    protocol = new StompProtocol();
+    protocol->setUsername(username);
+    protocol->setLoggedIn(false);
 
-	// Build CONNECT frame text manually (no Frame class)
-	// STOMP server expects \n line breaks and empty line before body (none here)
-	string connectFrame =
-		"CONNECT\n"
-		"accept-version:1.2\n"
-		"host:stomp.cs.bgu.ac.il\n"
-		"login:" +
-		user + "\n"
-			   "passcode:" +
-		pass + "\n"
-			   "\n"; // end headers
+    // Build CONNECT frame (no Frame class)
+    // Important: empty line before body (no body here)
+    string connectFrame =
+        "CONNECT\n"
+        "accept-version:1.2\n"
+        "host:stomp.cs.bgu.ac.il\n"
+        "login:" + username + "\n"
+        "passcode:" + password + "\n"
+        "\n";
 
-	if (!connectionHandler->sendFrameAscii(connectFrame, '\0'))
-	{
-		cerr << "Failed to send CONNECT frame" << endl;
-		delete protocol;
-		delete connectionHandler;
-		protocol = nullptr;
-		connectionHandler = nullptr;
-		return;
-	}
+    if (!connectionHandler->sendFrameAscii(connectFrame, '\0')) {
+        cerr << "Failed to send CONNECT frame" << endl;
+        delete protocol;
+        delete connectionHandler;
+        protocol = nullptr;
+        connectionHandler = nullptr;
+        connected = false;
+        return;
+    }
 
-	// Start listener thread
-	shouldStop = false;
-	loggedIn = true; // connection exists (actual login confirmed when CONNECTED arrives)
-	listenerRunning = true;
-
-	listenerThread = thread(&StompClient::listenToServer, this);
+    // Start listener thread
+    shouldStop = false;
+    listenerThread = thread(&StompClient::listenToServer, this);
 }
 
-void StompClient::listenToServer()
-{
-	while (!shouldStop.load())
-	{
-		string inFrame;
-		if (!connectionHandler->getFrameAscii(inFrame, '\0'))
-		{
-			// socket closed or read failed
-			if (!shouldStop.load())
-			{
-				cout << "Disconnected. Exiting..." << endl;
-			}
-			shouldStop = true;
-			loggedIn = false;
-			break;
-		}
+void StompClient::listenToServer() {
+    while (!shouldStop.load()) {
+        string inFrame;
 
-		bool keepRunning = protocol->processServerFrame(inFrame);
+        // Read until '\0'
+        if (!connectionHandler->getFrameAscii(inFrame, '\0')) {
+            if (!shouldStop.load()) {
+                cout << "Disconnected. Exiting..." << endl;
+            }
+            shouldStop = true;
+            break;
+        }
 
-		if (!keepRunning)
-		{
-			// protocol decided: stop (ERROR or logout receipt)
-			shouldStop = true;
-			loggedIn = false;
-			break;
-		}
-	}
+        // Delegate parsing/printing to protocol
+        bool keepRunning = protocol->processServerFrame(inFrame);
 
-	listenerRunning = false;
+        if (!keepRunning) {
+            // Protocol says stop (ERROR or logout receipt)
+            shouldStop = true;
+            break;
+        }
+    }
 }
 
-void StompClient::cleanup()
-{
-	// Stop loop
-	shouldStop = true;
+void StompClient::cleanup() {
+    // Stop loops
+    shouldStop = true;
 
-	// Close socket (safe even if already closed)
-	if (connectionHandler != nullptr)
-	{
-		connectionHandler->close();
-	}
+    // Close socket first (unblocks listener if it's stuck on read)
+    if (connectionHandler != nullptr) {
+        connectionHandler->close();
+    }
 
-	// Join listener thread if running
-	if (listenerThread.joinable())
-	{
-		listenerThread.join();
-	}
+    // Join thread if exists
+    if (listenerThread.joinable()) {
+        listenerThread.join();
+    }
 
-	// Delete objects
-	if (protocol != nullptr)
-	{
-		delete protocol;
-		protocol = nullptr;
-	}
-	if (connectionHandler != nullptr)
-	{
-		delete connectionHandler;
-		connectionHandler = nullptr;
-	}
+    // Delete owned objects
+    if (protocol != nullptr) {
+        delete protocol;
+        protocol = nullptr;
+    }
 
-	loggedIn = false;
+    if (connectionHandler != nullptr) {
+        delete connectionHandler;
+        connectionHandler = nullptr;
+    }
+
+    connected = false;
 }
 
+/* =========================
+   main() - stays in client
+   ========================= */
+int main(int argc, char* argv[]) {
+    (void)argc;
+    (void)argv;
 
+    StompClient client;
+    client.run();
+    return 0;
+}
