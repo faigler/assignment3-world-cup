@@ -28,6 +28,9 @@ public:
     // Processing
     bool processServerFrame(const string &frame);
     string processUserCommand(const string &line);
+    // Used by the client main after receiving RECEIPT of logout
+    bool shouldCloseConnection() const;
+    void markConnectionClosed();
 
 private:
     // Client command handlers
@@ -46,6 +49,9 @@ private:
     // Counters
     int subIdCounter;
     int receiptIdCounter;
+    // Logout flow
+    int pendingLogoutReceiptId; // -1 when no logout is pending
+    bool shouldTerminate;       // true only after RECEIPT of logout
 
     // Subscriptions and receipts
     map<string, int> subscriptions;  // channel -> subscription id

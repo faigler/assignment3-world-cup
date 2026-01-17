@@ -1,11 +1,17 @@
 #include "StompProtocol.h"
 #include <sstream>
 #include <iostream>
+#include <fstream>
+#include <algorithm>
 
 using namespace std;
 
 StompProtocol::StompProtocol()
-    : subIdCounter(0), receiptIdCounter(0), loggedIn(false) {}
+    : loggedIn(false),
+      subIdCounter(0),
+      receiptIdCounter(0),
+      pendingLogoutReceiptId(-1),
+      shouldTerminate(false) {}
 
 void StompProtocol::setUsername(const string &user)
 {
@@ -28,16 +34,29 @@ bool StompProtocol::processServerFrame(const string &frame)
 
     if (frame.find("RECEIPT") == 0)
     {
-        // Find the receipt-id header position
+        // Find the position of the "receipt-id:" header
         size_t pos = frame.find("receipt-id:");
+        if (pos == string::npos)
+            return true; // No receipt-id found, ignore frame
 
-        // Extract the receipt id number (after "receipt-id:")
-        int id = stoi(frame.substr(pos + 11));
+        // Extract only the receipt-id value (until end of line)
+        size_t endLine = frame.find('\n', pos);
+        string idStr = frame.substr(pos + 11, endLine - (pos + 11));
+        int id = stoi(idStr);
 
-        // Print the stored action related to this receipt
-        cout << receiptActions[id] << endl;
+        // Print the action associated with this receipt-id, if exists
+        if (receiptActions.count(id) > 0)
+            cout << receiptActions[id] << endl;
 
-        // Continue running client
+        // If this receipt corresponds to a logout request,
+        // mark protocol for termination (socket will be closed by the client)
+        if (id == pendingLogoutReceiptId)
+        {
+            loggedIn = false;
+            shouldTerminate = true;
+            return false; // Signal listener thread to stop
+        }
+
         return true;
     }
 
@@ -174,6 +193,18 @@ string StompProtocol::processUserCommand(const string &line)
     return "";
 }
 
+bool StompProtocol::shouldCloseConnection() const
+{
+    return shouldTerminate;
+}
+
+void StompProtocol::markConnectionClosed()
+{
+    shouldTerminate = false;
+    pendingLogoutReceiptId = -1;
+    subscriptions.clear();
+}
+
 /* ================= Handlers ================= */
 
 string StompProtocol::handleJoin(const string &channel)
@@ -277,7 +308,7 @@ string StompProtocol::handleReport(const string &filePath)
         frames +=
             "SEND\n"
             "destination:" +
-            gameName + "\n\nֿ" +
+            gameName + "\n\n" +
             body + "\0";
 
         gameEvents[gameName][username].push_back(event);
@@ -291,7 +322,7 @@ string StompProtocol::handleReport(const string &filePath)
     return frames;
 }
 
-void StompProtocol::handleSummary(const string &game,const string &user, const string &file)
+void StompProtocol::handleSummary(const string &game, const string &user, const string &file)
 {
     // Check if we have events
     if (gameEvents.count(game) == 0 ||
@@ -372,15 +403,23 @@ void StompProtocol::handleSummary(const string &game,const string &user, const s
     }
 
     outFile.close();
-    cout << "Summary file created at " << filePath << endl;
+    cout << "Summary file created at " << file << endl;
 }
 
 string StompProtocol::handleLogout()
 {
+    if (!loggedIn)
+    {
+        cout << "Not logged in" << endl;
+        return "";
+    }
+
     int receiptId = ++receiptIdCounter;
-    receiptActions[receiptId] = "Disconnecting";
+    pendingLogoutReceiptId = receiptId;
+    receiptActions[receiptId] = "Disconnecting...";
 
     return "DISCONNECT\n"
            "receipt:" +
-           to_string(receiptId) + "\n\n";
+           to_string(receiptId) +
+           "\n\n\0";
 }
