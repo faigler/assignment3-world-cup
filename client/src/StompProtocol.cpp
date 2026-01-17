@@ -322,9 +322,6 @@ void StompProtocol::handleSummary(const string &game, const string &user, const 
         return;
     }
 
-    // Opens the output file:
-    // - If the file does not exist, it will be created
-    // - If the file already exists, its content will be overwritten
     ofstream outFile(file);
     if (!outFile)
     {
@@ -332,13 +329,39 @@ void StompProtocol::handleSummary(const string &game, const string &user, const 
         return;
     }
 
-    // Copy events and sort by time
+    // Copy events
     vector<Event> events = gameEvents[game][user];
-    sort(events.begin(), events.end(),
-         [](const Event &a, const Event &b)
-         {
-             return a.get_time() < b.get_time();
-         });
+
+    vector<Event> beforeHalftime;
+    vector<Event> afterHalftime;
+
+    // Split events by halftime
+    for (const Event &event : events)
+    {
+        // If "before halftime" exists -> before halftime
+        if (event.get_game_updates().count("before halftime") > 0)
+        {
+            beforeHalftime.push_back(event);
+        }
+        else
+        {
+            afterHalftime.push_back(event);
+        }
+    }
+
+    // Sort each group by time
+    auto timeComparator = [](const Event &a, const Event &b)
+    {
+        return a.get_time() < b.get_time();
+    };
+
+    sort(beforeHalftime.begin(), beforeHalftime.end(), timeComparator);
+    sort(afterHalftime.begin(), afterHalftime.end(), timeComparator);
+
+    // Merge back: before halftime first, then after halftime
+    events.clear();
+    events.insert(events.end(), beforeHalftime.begin(), beforeHalftime.end());
+    events.insert(events.end(), afterHalftime.begin(), afterHalftime.end());
 
     string teamA = events[0].get_team_a_name();
     string teamB = events[0].get_team_b_name();
@@ -347,7 +370,6 @@ void StompProtocol::handleSummary(const string &game, const string &user, const 
     map<string, string> teamAStats;
     map<string, string> teamBStats;
 
-    // Collect statistics (last value wins)
     for (const Event &event : events)
     {
         for (const auto &p : event.get_game_updates())
@@ -360,29 +382,24 @@ void StompProtocol::handleSummary(const string &game, const string &user, const 
             teamBStats[p.first] = p.second;
     }
 
-    // Header
     outFile << teamA << " vs " << teamB << "\n";
     outFile << "Game stats:\n";
 
-    // General stats
     outFile << "General stats:\n";
     for (const auto &p : generalStats)
         outFile << p.first << ": " << p.second << "\n";
     outFile << "\n";
 
-    // Team A stats
     outFile << teamA << " stats:\n";
     for (const auto &p : teamAStats)
         outFile << p.first << ": " << p.second << "\n";
     outFile << "\n";
 
-    // Team B stats
     outFile << teamB << " stats:\n";
     for (const auto &p : teamBStats)
         outFile << p.first << ": " << p.second << "\n";
     outFile << "\n";
 
-    // Event reports
     outFile << "Game event reports:\n";
     for (const Event &event : events)
     {

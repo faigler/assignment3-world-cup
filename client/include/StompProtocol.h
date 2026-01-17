@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../include/ConnectionHandler.h"ִִ
+#include "../include/ConnectionHandler.h"
 
 #ifndef STOMPPROTOCOL_H_
 #define STOMPPROTOCOL_H_
