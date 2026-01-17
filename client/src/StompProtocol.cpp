@@ -86,7 +86,17 @@ bool StompProtocol::processServerFrame(const string &frame)
         string body = frame.substr(bodyPos + 2);
 
         Event event(body);
-        string user = getUserName(body);
+
+        // Extract username from the first line: "user: <name>"
+        stringstream bodyStream(body);
+        string firstLine;
+        getline(bodyStream, firstLine);
+
+        string user = "";
+        if (firstLine.find("user:") == 0)
+        {
+            user = firstLine.substr(6); // after "user: "
+        }
 
         gameEvents[gameName][user].push_back(event);
 
@@ -186,7 +196,7 @@ string StompProtocol::handleJoin(const string &channel)
                      "id:" +
            to_string(subId) + "\n"
                               "receipt:" +
-           to_string(receiptId) + "\n\n\0";
+           to_string(receiptId) + "\n\n";
 }
 
 string StompProtocol::handleExit(const string &channel)
@@ -207,7 +217,7 @@ string StompProtocol::handleExit(const string &channel)
            "id:" +
            to_string(subId) + "\n"
                               "receipt:" +
-           to_string(receiptId) + "\n\n\0";
+           to_string(receiptId) + "\n\n";
 }
 
 string StompProtocol::handleReport(const string &filePath)
@@ -226,7 +236,7 @@ string StompProtocol::handleReport(const string &filePath)
 
     string gameName = data.team_a_name + "_" + data.team_b_name;
 
-    if (activeSubscriptions.count(gameName) == 0)
+    if (subscriptions.count(gameName) == 0)
     {
         cout << "Error: not subscribed to " << gameName << endl;
         return "";
@@ -267,38 +277,43 @@ string StompProtocol::handleReport(const string &filePath)
         frames +=
             "SEND\n"
             "destination:" +
-            gameName + "\n\n" +
+            gameName + "\n\nֿ" +
             body + "\0";
 
         gameEvents[gameName][username].push_back(event);
     }
 
+    if (!frames.empty() && frames.back() == '\0')
+    {
+        frames.pop_back();
+    }
+
     return frames;
 }
 
-void StompProtocol::handleSummary(string gameName, string userName, string filePath)
+void StompProtocol::handleSummary(const string &game,const string &user, const string &file)
 {
     // Check if we have events
-    if (gameEvents.count(gameName) == 0 ||
-        gameEvents[gameName].count(userName) == 0)
+    if (gameEvents.count(game) == 0 ||
+        gameEvents[game].count(user) == 0)
     {
-        cout << "No events found for user " << userName
-             << " in game " << gameName << endl;
+        cout << "No events found for user " << user
+             << " in game " << game << endl;
         return;
     }
 
     // Opens the output file:
     // - If the file does not exist, it will be created
     // - If the file already exists, its content will be overwritten
-    ofstream outFile(filePath);
+    ofstream outFile(file);
     if (!outFile)
     {
-        cout << "Error creating file: " << filePath << endl;
+        cout << "Error creating file: " << file << endl;
         return;
     }
 
     // Copy events and sort by time
-    vector<Event> events = gameEvents[gameName][userName];
+    vector<Event> events = gameEvents[game][user];
     sort(events.begin(), events.end(),
          [](const Event &a, const Event &b)
          {
@@ -367,5 +382,5 @@ string StompProtocol::handleLogout()
 
     return "DISCONNECT\n"
            "receipt:" +
-           to_string(receiptId) + "\n\n\0";
+           to_string(receiptId) + "\n\n";
 }
