@@ -3,6 +3,7 @@
 #include <iostream>
 #include <fstream>
 #include <algorithm>
+#include <mutex>
 
 using namespace std;
 
@@ -15,11 +16,13 @@ StompProtocol::StompProtocol()
 
 void StompProtocol::setUsername(const string &user)
 {
+    std::lock_guard<std::mutex> lock(mtx);
     username = user;
 }
 
 void StompProtocol::setLoggedIn(bool value)
 {
+    std::lock_guard<std::mutex> lock(mtx);
     loggedIn = value;
 }
 
@@ -28,6 +31,7 @@ bool StompProtocol::processServerFrame(const string &frame)
     if (frame.find("CONNECTED") == 0)
     {
         cout << "Login successful" << endl;
+        std::lock_guard<std::mutex> lock(mtx);
         loggedIn = true;
         return true;
     }
@@ -45,6 +49,7 @@ bool StompProtocol::processServerFrame(const string &frame)
         int id = stoi(idStr);
 
         // Print the action associated with this receipt-id, if exists
+         std::lock_guard<std::mutex> lock(mtx);
         if (receiptActions.count(id) > 0)
             cout << receiptActions[id] << endl;
 
@@ -89,6 +94,7 @@ bool StompProtocol::processServerFrame(const string &frame)
              << body << endl;
 
         // Protocol rule: ERROR closes connection
+        std::lock_guard<std::mutex> lock(mtx);
         loggedIn = false;
         shouldTerminate = true;
         return false;
@@ -117,7 +123,7 @@ bool StompProtocol::processServerFrame(const string &frame)
         {
             user = firstLine.substr(6); // after "user: "
         }
-
+        std::lock_guard<std::mutex> lock(mtx);
         gameEvents[gameName][user].push_back(event);
 
         cout << "Received message from " << gameName << ":\n"
@@ -198,6 +204,7 @@ string StompProtocol::processUserCommand(const string &line)
 
 string StompProtocol::handleJoin(const string &channel)
 {
+    std::lock_guard<std::mutex> lock(mtx);
     if (subscriptions.count(channel) > 0)
     {
         cout << "Already subscribed to " << channel << "\n";
@@ -221,6 +228,7 @@ string StompProtocol::handleJoin(const string &channel)
 
 string StompProtocol::handleExit(const string &channel)
 {
+    std::lock_guard<std::mutex> lock(mtx);
     if (subscriptions.count(channel) == 0)
     {
         cout << "Not subscribed to " << channel << "\n";
@@ -255,7 +263,7 @@ string StompProtocol::handleReport(const string &filePath)
     }
 
     string gameName = data.team_a_name + "_" + data.team_b_name;
-
+    std::lock_guard<std::mutex> lock(mtx);
     if (subscriptions.count(gameName) == 0)
     {
         cout << "Error: not subscribed to " << gameName << endl;
@@ -300,6 +308,7 @@ string StompProtocol::handleReport(const string &filePath)
             gameName + "\n\n" +
             body + "\0";
 
+       
         gameEvents[gameName][username].push_back(event);
     }
 
@@ -314,6 +323,7 @@ string StompProtocol::handleReport(const string &filePath)
 void StompProtocol::handleSummary(const string &game, const string &user, const string &file)
 {
     // Check if we have events
+    std::lock_guard<std::mutex> lock(mtx);
     if (gameEvents.count(game) == 0 ||
         gameEvents[game].count(user) == 0)
     {
@@ -330,6 +340,7 @@ void StompProtocol::handleSummary(const string &game, const string &user, const 
     }
 
     // Copy events
+
     vector<Event> events = gameEvents[game][user];
 
     vector<Event> beforeHalftime;
@@ -414,6 +425,7 @@ void StompProtocol::handleSummary(const string &game, const string &user, const 
 
 string StompProtocol::handleLogout()
 {
+    std::lock_guard<std::mutex> lock(mtx);
     if (!loggedIn)
     {
         cout << "Not logged in" << endl;

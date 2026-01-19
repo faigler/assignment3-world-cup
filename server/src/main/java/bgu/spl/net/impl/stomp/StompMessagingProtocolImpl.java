@@ -25,7 +25,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
     }
 
     @Override
-    public void process(String message) {
+    public String process(String message) {
 
         String originalFrame = message;
         String[] lines = message.split("\n");
@@ -81,6 +81,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
             default:
                 sendError("Unknown command", originalFrame, "", headers);
         }
+        return null;
     }
 
     @Override

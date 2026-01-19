@@ -11,6 +11,9 @@
 #include <unordered_map>
 
 #include "event.h"
+#include <mutex>  
+
+
 
 using std::map;
 using std::string;
@@ -33,7 +36,7 @@ private:
     // Client command handlers
     string handleJoin(const string &channel);
     string handleExit(const string &channel);
-    vector<string> StompProtocol::handleReport(const string &filePath);
+    string handleReport(const string &filePath);
     void handleSummary(const string &game,
                        const string &user,
                        const string &file);
@@ -56,6 +59,7 @@ private:
 
     // Stored game events (for summary)
     map<string, map<string, vector<Event>>> gameEvents;
+    mutable std::mutex mtx;
 };
 
 #endif /* STOMPPROTOCOL_H_ */
