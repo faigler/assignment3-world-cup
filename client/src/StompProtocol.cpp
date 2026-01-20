@@ -271,11 +271,19 @@ string StompProtocol::handleReport(const string &filePath)
     }
 
     string frames = "";
+    bool isFirstEvent = true;
 
     for (const Event &event : data.events)
     {
 
-        string body =
+        string body = "";
+        if (isFirstEvent)
+        {
+            body += "file: " + filePath + "\n";
+            isFirstEvent = false;
+        }
+
+        body +=
             "user: " + username + "\n" +
             "team a: " + data.team_a_name + "\n" +
             "team b: " + data.team_b_name + "\n" +
@@ -302,6 +310,7 @@ string StompProtocol::handleReport(const string &filePath)
 
         body += "description:\n" + event.get_discription() + "\n";
 
+        
         frames +=
             "SEND\n"
             "destination:" +

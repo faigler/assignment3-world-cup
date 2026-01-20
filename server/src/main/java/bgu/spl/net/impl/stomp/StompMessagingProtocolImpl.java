@@ -388,6 +388,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
         // Protocol rule: after ERROR -> close connection
         shouldTerminate = true;
         connections.disconnect(connectionId);
+        database.logout(connectionId);
     }
 
 }

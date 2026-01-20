@@ -56,19 +56,19 @@ def init_database():
     with sqlite3.connect(DB_FILE) as conn:
         # Execute multiple SQL commands at once
         conn.executescript("""
-            CREATE TABLE IF NOT EXISTS Users (
+            CREATE TABLE IF NOT EXISTS users (
                 username TEXT PRIMARY KEY,
                 password TEXT NOT NULL
             );
 
-            CREATE TABLE IF NOT EXISTS Logins (
+            CREATE TABLE IF NOT EXISTS login_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL,
                 login_time TEXT NOT NULL,
                 logout_time TEXT
             );
 
-            CREATE TABLE IF NOT EXISTS Files (
+            CREATE TABLE IF NOT EXISTS file_tracking (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL,
                 filename TEXT NOT NULL,
