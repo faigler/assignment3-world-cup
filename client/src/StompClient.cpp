@@ -3,6 +3,9 @@
 #include <iostream>
 #include <sstream>
 #include <vector>
+#include <poll.h>
+#include <unistd.h>
+
 
 using namespace std;
 
@@ -33,8 +36,32 @@ StompClient::~StompClient() {
  //- Sends other commands to the server via the protocol
 void StompClient::run() {
     while (!shouldStop.load()) {
+    //     string line;
+    //    // if (!getline(cin, line)) break; // returns false only if the client actively closes stdin (Ctrl-D)
+
+    //     getline(cin, line);
+
+        pollfd pfd;
+        pfd.fd = STDIN_FILENO;
+        pfd.events = POLLIN;
+
+        int rc = poll(&pfd, 1, 100); // 100ms
+        if (shouldStop.load()) break;
+
+        if (rc < 0) { // poll error
+            shouldStop = true;
+            break;
+        }
+        if (rc == 0) { 
+            continue;
+        }
+
         string line;
-        if (!getline(cin, line)) break; // returns false only if the client actively closes stdin (Ctrl-D)
+        if (!getline(cin, line)) { // EOF / Ctrl-D
+            shouldStop = true;
+            break;
+        }
+
 
         if (line.empty()) continue;
 
@@ -161,6 +188,9 @@ void StompClient::listenToServer() {
         if (!keepRunning) {
             // Protocol says stop (ERROR or logout receipt)
             shouldStop = true;
+             if (connectionHandler != nullptr) {
+                connectionHandler->close();
+         }
             break;
         }
     }

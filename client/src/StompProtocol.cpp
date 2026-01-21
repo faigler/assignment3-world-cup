@@ -283,7 +283,7 @@ string StompProtocol::handleReport(const string &filePath)
             isFirstEvent = false;
         }
 
-        body +=
+        
             "user: " + username + "\n" +
             "team a: " + data.team_a_name + "\n" +
             "team b: " + data.team_b_name + "\n" +
